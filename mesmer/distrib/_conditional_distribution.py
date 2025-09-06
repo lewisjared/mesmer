@@ -159,6 +159,7 @@ class ConditionalDistribution:
             output_core_dims=[["coefficient"]],
             vectorize=True,
             dask="parallelized",
+            dask_gufunc_kwargs={"allow_rechunk": True},
             output_dtypes=[float],
             kwargs={"on_failed_fit": on_failed_fit},
         )
@@ -292,6 +293,7 @@ class ConditionalDistribution:
             output_core_dims=[["coefficient"]],
             vectorize=True,
             dask="parallelized",
+            dask_gufunc_kwargs={"allow_rechunk": True},
             output_dtypes=[float],
             kwargs={
                 "predictor_names": predictor_names,
@@ -405,6 +407,7 @@ class ConditionalDistribution:
             kwargs={"scores": scores},
             vectorize=True,
             dask="parallelized",
+            dask_gufunc_kwargs={"allow_rechunk": True},
             output_dtypes=[float] * n_scores,
         )
 
@@ -424,10 +427,8 @@ class ConditionalDistribution:
 
         # need to loop to ensure correct order
         for score in scores:
-
             # basic result: optimized value
             if score == "func_optim":
-
                 func = _optimizers._optimization_function(
                     optimizer=self._optimizer,
                     data_pred=data_pred,
