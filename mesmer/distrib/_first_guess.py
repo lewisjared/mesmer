@@ -555,6 +555,15 @@ class _FirstGuess:
         x[self.expression.ind_scale_coeffs] = x_scale
         scale = self.expression._evaluate_one_param_fast(x, self.data_pred, "scale")
 
+        # Align scale to match the length of self.smooth_targ_dev_sq
+        l_smooth = self.l_smooth
+        if scale.ndim == 1:
+            scale = scale[l_smooth:-l_smooth]
+        elif scale.ndim > 1:
+            raise NotImplementedError(
+                "First guess for scale with multi-dimensional scale not implemented."
+            )
+
         if not _distrib_checks._param_in_bounds(self.expression, scale, "scale"):
             # this coefficient on scale causes problem
             return np.inf
