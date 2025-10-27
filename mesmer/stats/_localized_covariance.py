@@ -3,6 +3,7 @@ import warnings
 import numpy as np
 import scipy
 import xarray as xr
+from loguru import logger
 
 from mesmer._core.utils import (
     LinAlgWarning,
@@ -13,11 +14,9 @@ from mesmer._core.utils import (
 )
 
 
-def adjust_covariance_ar1(
-    covariance: xr.DataArray, ar_coefs: xr.DataArray
-) -> xr.DataArray:
+def adjust_covariance_ar1(covariance: xr.DataArray, ar_coefs: xr.DataArray) -> xr.DataArray:
     """
-    adjust localized empirical covariance matrix for autoregressive process of order one
+    Adjust localized empirical covariance matrix for autoregressive process of order one
 
     Parameters
     ----------
@@ -62,18 +61,14 @@ def adjust_covariance_ar1(
     .. [3] Cressie, N. and Wikle, C. K.: Statistics for spatio-temporal data, John Wiley
        & Sons, Hoboken, New Jersey, USA, 2011.
     """
-
     # pass ar_coefs.data - so it will 'just work'
     return _adjust_ecov_ar1_np(covariance, ar_coefs.data)
 
 
 def _adjust_ecov_ar1_np(covariance, ar_coefs):
-
     ar_coefs = ar_coefs.squeeze()  # allow n x 1 ar_coeffs
     if ar_coefs.ndim != 1 or ar_coefs.size != covariance.shape[0]:
-        raise ValueError(
-            "`ar_coefs` must be 1D and have length equal to the size of `covariance`"
-        )
+        raise ValueError("`ar_coefs` must be 1D and have length equal to the size of `covariance`")
 
     reduction_factor = np.sqrt(1 - ar_coefs**2)
     reduction_factor = np.atleast_2d(reduction_factor)  # so it can be transposed
@@ -91,7 +86,7 @@ def find_localized_empirical_covariance(
     k_folds: int,
     equal_dim_suffixes: tuple[str, str] = ("_i", "_j"),
 ) -> xr.Dataset:
-    """determine localized empirical covariance by cross validation
+    """Determine localized empirical covariance by cross validation
 
     Parameters
     ----------
@@ -127,7 +122,6 @@ def find_localized_empirical_covariance(
     Runs a k-fold cross validation if ``k_folds`` is smaller than the number of samples
     and a leave-one-out cross validation otherwise.
     """
-
     _check_dataarray_form(data, name="data", ndim=2)
 
     (sample_dim,) = data[dim].dims
@@ -167,7 +161,7 @@ def find_localized_empirical_covariance_monthly(
     k_folds: int,
     equal_dim_suffixes: tuple[str, str] = ("_i", "_j"),
 ) -> xr.Dataset:
-    """determine localized empirical covariance by cross validation for each month.
+    """Determine localized empirical covariance by cross validation for each month.
 
     `data` should be the residuals of the cyclo-stationary AR(1) process, see
     :func:`fit_auto_regression_monthly <mesmer.stats.fit_auto_regression_monthly>`. Note
@@ -229,7 +223,7 @@ def find_localized_empirical_covariance_monthly(
 
 
 def _find_localized_empirical_covariance_np(data, weights, localizer, k_folds):
-    """determine localized empirical covariance by cross validation
+    """Determine localized empirical covariance by cross validation
 
     Parameters
     ----------
@@ -259,7 +253,6 @@ def _find_localized_empirical_covariance_np(data, weights, localizer, k_folds):
     Runs a k-fold cross validation if ``k_folds`` is smaller than the number of samples
     and a leave-one-out cross validation otherwise.
     """
-
     if not isinstance(k_folds, int) or k_folds <= 1:
         raise ValueError(f"'k_folds' must be an integer larger than 1, got {k_folds}.")
 
@@ -291,14 +284,12 @@ def _find_localized_empirical_covariance_np(data, weights, localizer, k_folds):
 @_set_threads_from_options()
 def _ecov_crossvalidation(localization_radius, *, data, weights, localizer, k_folds):
     """k-fold crossvalidation for a single localization radius"""
-
     n_samples, __ = data.shape
     n_iterations = min(n_samples, k_folds)
 
     nll = 0  # negative log likelihood
 
     for it in range(n_iterations):
-
         # every `k_folds` element for validation such that each is used exactly once
         sel = np.ones(n_samples, dtype=bool)
         sel[it::k_folds] = False
@@ -318,17 +309,18 @@ def _ecov_crossvalidation(localization_radius, *, data, weights, localizer, k_fo
             nll += _get_neg_loglikelihood(data_cv, localized_cov, weights_cv)
         except np.linalg.LinAlgError:
             warnings.warn(
-                f"Singular matrix for localization_radius of {localization_radius}."
-                " Skipping this radius.",
+                f"Singular matrix for localization_radius of {localization_radius}. Skipping this radius.",
                 LinAlgWarning,
             )
             return float("inf")
+
+        logger.info(f"CV fold {it + 1}/{n_iterations}, localization_radius={localization_radius}, current NLL={nll:.2f}")
 
     return nll
 
 
 def _get_neg_loglikelihood(data, covariance, weights):
-    """calculate weighted log likelihood for multivariate normal distribution
+    """Calculate weighted log likelihood for multivariate normal distribution
 
     Parameters
     ----------
@@ -353,7 +345,6 @@ def _get_neg_loglikelihood(data, covariance, weights):
     -----
     The mean is assumed to be zero for all points.
     """
-
     # NOTE: 90 % of time is spent in multivariate_normal.logpdf - not much point
     # optimizing the rest
 
