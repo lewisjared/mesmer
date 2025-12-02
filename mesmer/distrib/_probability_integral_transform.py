@@ -91,6 +91,54 @@ class ProbabilityIntegralTransform:
             threshold_proba,
         )
 
+    def _prepare_params_for_scipy(self, params, data, expression):
+        """
+        Prepare parameters for scipy distribution methods.
+
+        Scipy's discrete distributions (like Poisson) have strict broadcasting
+        requirements. When parameters are xarray DataArrays with shape (gridpoint,)
+        and data has shape (time, gridpoint, member), scipy fails to broadcast.
+
+        This method converts xarray parameters to numpy arrays with proper shape
+        by broadcasting them to match the data dimensions.
+
+        Parameters
+        ----------
+        params : dict
+            Dictionary of parameter DataArrays from evaluate_params()
+        data : xr.DataArray
+            Target data with dimensions like (time, gridpoint, member)
+        expression : Expression
+            Distribution expression to check if it's discrete
+
+        Returns
+        -------
+        params_values : dict
+            Dictionary of numpy arrays with proper broadcasting shape
+        """
+        # Check if this is a discrete distribution
+        # Discrete distributions in scipy.stats: poisson, binom, nbinom, hypergeom, etc.
+        is_discrete = hasattr(expression.distrib, "pmf")
+
+        params_values = {}
+        for param_name, param_value in params.items():
+            if isinstance(param_value, xr.DataArray):
+                # For discrete distributions, ensure proper broadcasting
+                if is_discrete:
+                    # Broadcast parameter to match data dimensions
+                    # This handles cases like param (gridpoint,) + data (time, gridpoint, member)
+                    # Result: param (time, gridpoint, member) where param varies only along gridpoint
+                    broadcasted, _ = xr.broadcast(param_value, data)
+                    params_values[param_name] = broadcasted.values
+                else:
+                    # For continuous distributions, keep as-is (xarray handles it)
+                    params_values[param_name] = param_value
+            else:
+                # Already numpy array or scalar
+                params_values[param_name] = param_value
+
+        return params_values
+
     @_datatree_wrapper
     def _transform(
         self, data, target_name, ds_pred_orig, ds_preds_targ, threshold_proba
@@ -105,8 +153,14 @@ class ProbabilityIntegralTransform:
             self.coefficients_orig, ds_pred_orig, forced_shape=data[target_name].dims
         )
 
+        # For discrete distributions, scipy requires proper broadcasting of parameters
+        # Convert xarray DataArrays to numpy arrays with correct shape
+        params_orig_values = self._prepare_params_for_scipy(
+            params_orig, data[target_name], self.expression_orig
+        )
+
         # probabilities of the sample on the starting distribution
-        cdf_data = self.expression_orig.distrib.cdf(data[target_name], **params_orig)
+        cdf_data = self.expression_orig.distrib.cdf(data[target_name], **params_orig_values)
 
         # avoiding very unlikely values
         cdf_data[np.where(cdf_data < threshold_proba)] = threshold_proba
@@ -117,8 +171,14 @@ class ProbabilityIntegralTransform:
             self.coefficients_targ, ds_preds_targ, forced_shape=data[target_name].dims
         )
 
+        # For discrete distributions, scipy requires proper broadcasting of parameters
+        # Convert xarray DataArrays to numpy arrays with correct shape
+        params_targ_values = self._prepare_params_for_scipy(
+            params_targ, data[target_name], self.expression_targ
+        )
+
         # values corresponding to probabilities of sample on the ending distribution
-        trans = self.expression_targ.distrib.ppf(cdf_data, **params_targ)
+        trans = self.expression_targ.distrib.ppf(cdf_data, **params_targ_values)
         return xr.Dataset(
             {target_name: (data[target_name].dims, trans)},
             coords=data[target_name].coords,
